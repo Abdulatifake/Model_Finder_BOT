@@ -1,0 +1,81 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
+}
+
+model User {
+  id         Int      @id @default(autoincrement())
+  telegramId BigInt   @unique
+  firstName  String?
+  lastName   String?
+  username   String?
+  phone      String?
+  language   String?
+  createdAt  DateTime @default(now())
+
+  searches  SearchQuery[]
+  favorites Favorite[]
+}
+
+model Model3D {
+  id                Int      @id @default(autoincrement())
+  telegramMessageId BigInt?  @unique
+  externalId        String?
+  name              String
+  description       String?
+  category          String   @default("other")
+  tags              String[]
+  previewImageUrl   String
+  sourceLink        String?
+  telegramLink      String?
+  fileMessageIds    BigInt[]
+  fileNames         String[]
+  fileSize          BigInt?
+  photoFileId       String?
+  embedding         Unsupported("halfvec(512)")?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  favorites Favorite[]
+
+  @@index([category])
+  @@index([externalId])
+}
+
+model SearchQuery {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String
+  source        String
+  imageUrl      String?
+  queryText     String?
+  objects       Json?
+  objectIndex   Int?
+  parentId      Int?
+  sourceModelId Int?
+  resultIds     Int[]
+  resultScores  Float[]
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([parentId])
+}
+
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  modelId   Int
+  model     Model3D  @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, modelId])
+}

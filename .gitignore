@@ -1,0 +1,15 @@
+# Bog'liqliklar va build natijalari
+node_modules/
+dist/
+
+# Maxfiy sozlamalar (bot tokeni, baza paroli, admin kaliti)
+.env
+.env.local
+
+# Backend ish vaqtidagi ma'lumotlar: AI modellar keshi, yuklangan rasmlar, 119K kichik rasm (~3 GB)
+backend/.cache/
+backend/uploads/
+backend/public/models/
+
+# Lokal muharrir sozlamalari
+.claude/
