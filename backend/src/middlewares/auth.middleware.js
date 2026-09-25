@@ -4,15 +4,16 @@ import { getOrCreateUser } from '../models/User.js';
 import { resolveLanguage } from '../i18n/index.js';
 
 const INIT_DATA_MAX_AGE_SECONDS = 24 * 60 * 60;
+const ADMIN_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEV_USER = { id: 999999999, first_name: 'Dev', language_code: 'uz' };
 
-function safeEqual(a, b) {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
+export function safeEqual(a, b) {
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
-// Tunnel (ngrok/cloudflared) orqali kelgan so'rovlar shu sarlavhalardan birini olib keladi
+// Tunnel yoki hosting proksisi orqali kelgan so'rovlar shu sarlavhalardan birini olib keladi
 function isLocalRequest(req) {
   return !req.headers['x-forwarded-for'] && !req.headers['cf-connecting-ip'] && !req.headers['x-forwarded-host'];
 }
@@ -61,10 +62,29 @@ export async function telegramAuth(req, res, next) {
   }
 }
 
-// Admin API faqat shu kompyuterdan (tunnel orqali emas) va to'g'ri kalit bilan ochiladi
+function signAdminPayload(payload) {
+  return crypto.createHmac('sha256', config.adminTokenSecret).update(payload).digest('base64url');
+}
+
+// Admin parol bilan kirgach beriladigan imzolangan token: "<payload>.<imzo>"
+export function issueAdminToken() {
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + ADMIN_TOKEN_TTL_MS })).toString('base64url');
+  return `${payload}.${signAdminPayload(payload)}`;
+}
+
+function verifyAdminToken(token) {
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature || !safeEqual(signature, signAdminPayload(payload))) return false;
+  try {
+    return JSON.parse(Buffer.from(payload, 'base64url').toString()).exp > Date.now();
+  } catch {
+    return false;
+  }
+}
+
 export function adminAuth(req, res, next) {
-  const key = String(req.headers['x-admin-key'] || '');
-  if (!isLocalRequest(req) || !config.adminApiKey || !safeEqual(key, config.adminApiKey)) {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (!config.adminTokenSecret || !token || !verifyAdminToken(token)) {
     return res.status(401).json({ error: "Ruxsat yo'q" });
   }
   next();

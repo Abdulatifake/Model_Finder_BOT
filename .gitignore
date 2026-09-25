@@ -11,5 +11,6 @@ backend/.cache/
 backend/uploads/
 backend/public/models/
 
-# Lokal muharrir sozlamalari
+# Lokal muharrir sozlamalari va Vercel CLI bog'lanishi
 .claude/
+.vercel/

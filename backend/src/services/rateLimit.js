@@ -7,11 +7,13 @@ export const LIMITS = {
   similar: 30,
   crop: 30,
   download: 20,
+  // Admin parolini tanlab topishga urinishlardan himoya (IP bo'yicha)
+  login: 10,
 };
 
 // Og'ir (AI) so'rovlarni bir foydalanuvchi daqiqasiga cheksiz yubora olmasligi uchun
-export function allow(bucket, userId) {
-  const key = `${bucket}:${userId}`;
+export function allow(bucket, clientKey) {
+  const key = `${bucket}:${clientKey}`;
   const now = Date.now();
   const hits = (buckets.get(key) || []).filter((time) => now - time < WINDOW_MS);
   const allowed = hits.length < LIMITS[bucket];

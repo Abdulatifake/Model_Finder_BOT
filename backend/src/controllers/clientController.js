@@ -7,7 +7,7 @@ import { getModelsByIds, listByCategory, categoryCounts } from '../models/Model3
 import { searchPhoto, searchCrop, searchText, searchSimilar } from '../services/searchService.js';
 import { saveQueryImage, localPathFromUrl } from '../services/imageService.js';
 import { deliverFiles, downloadUrl } from '../services/deliveryService.js';
-import { toClientModel, toClientObjects } from '../services/presenter.js';
+import { toClientModel, toClientObjects, absoluteUrl } from '../services/presenter.js';
 import { allow } from '../services/rateLimit.js';
 
 const PAGE_SIZE = 20;
@@ -42,7 +42,7 @@ function presentSearch(search, models, lang, root = search) {
     searchId: search.id,
     rootId: root.id,
     type: search.type,
-    imageUrl: root.imageUrl ?? null,
+    imageUrl: absoluteUrl(root.imageUrl) ?? null,
     queryText: search.queryText ?? null,
     objects: toClientObjects(root.objects, lang),
     activeObject: search.type === 'crop' ? search.objectIndex : -1,
@@ -198,12 +198,12 @@ export async function history(req, res) {
       id: s.id,
       type: s.type,
       queryText: s.queryText,
-      imageUrl: s.imageUrl,
+      imageUrl: absoluteUrl(s.imageUrl),
       createdAt: s.createdAt,
       count: s.resultIds.length,
       previews: s.resultIds
         .slice(0, 3)
-        .map((id) => previews.get(id))
+        .map((id) => absoluteUrl(previews.get(id)))
         .filter(Boolean),
     }))
   );

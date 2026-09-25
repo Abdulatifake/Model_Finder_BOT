@@ -1,0 +1,39 @@
+# Render Blueprint: backend (Telegram bot + API)
+# Render → New → Blueprint → shu repozitoriyani tanlang. "sync: false" qiymatlarini Render o'zi so'raydi.
+services:
+  - type: web
+    name: model-finder-uz-api
+    runtime: node
+    rootDir: backend
+    # Neon bazasi us-east-2 (Ogayo) da — backend ham o'sha yerda bo'lsa, har bir so'rov ~170 ms emas, ~2 ms
+    region: ohio
+    # AI modellar ~1.1 GB xotira ishlatadi: 512 MB'li bepul/Starter tariflarda server qulaydi
+    plan: 1c-2g
+    # --include=dev: prisma CLI devDependencies'da — NODE_ENV=production qo'yilsa ham o'rnatilsin
+    buildCommand: npm ci --include=dev && npx prisma generate && npx prisma migrate deploy
+    startCommand: node src/index.js
+    healthCheckPath: /health
+    # 119K kichik rasm (~3.1 GB), foydalanuvchi yuklagan rasmlar va AI modellar keshi shu diskda saqlanadi
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: CHANNEL_USERNAME
+        value: PROMODELS2028
+      - key: MINI_APP_URL
+        value: https://model-finder-app.vercel.app
+      - key: ALLOWED_ORIGINS
+        value: https://model-finder-app.vercel.app,https://model-finder-admin.vercel.app
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_TOKEN_SECRET
+        generateValue: true

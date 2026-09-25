@@ -1,10 +1,45 @@
+import fs from 'fs';
+import path from 'path';
 import { prisma } from '../database/connection.js';
+import { config } from '../config/default.js';
 import { categoryLabel } from '../i18n/index.js';
 import { CATEGORY_KEYS } from '../config/taxonomy.js';
 import { MODEL_SELECT, createModel as insertModel, updateModel as saveModel, deleteModel as removeModel } from '../models/Model3D.js';
 import { getImageEmbedding } from '../services/embeddingService.js';
+import { absoluteUrl } from '../services/presenter.js';
+import { issueAdminToken, safeEqual } from '../middlewares/auth.middleware.js';
+import { allow } from '../services/rateLimit.js';
 
 const ADMIN_LANG = 'uz';
+const THUMBNAIL_NAME_RE = /^\d+\.jpg$/;
+
+export function login(req, res) {
+  if (!allow('login', req.ip)) {
+    return res.status(429).json({ error: "Juda ko'p urinish. Bir daqiqadan so'ng qayta urining" });
+  }
+  const password = String(req.body.password || '');
+  if (!config.adminPassword || !config.adminTokenSecret || !safeEqual(password, config.adminPassword)) {
+    return res.status(401).json({ error: "Parol noto'g'ri" });
+  }
+  res.json({ token: issueAdminToken() });
+}
+
+// Kompyuterdagi kichik rasmlarni serverdagi diskka ko'chirish uchun (scripts/upload-thumbnails.js)
+export function listThumbnails(req, res) {
+  fs.mkdirSync(config.paths.models, { recursive: true });
+  res.json({ names: fs.readdirSync(config.paths.models).filter((name) => THUMBNAIL_NAME_RE.test(name)) });
+}
+
+export function uploadThumbnails(req, res) {
+  fs.mkdirSync(config.paths.models, { recursive: true });
+  let saved = 0;
+  for (const file of req.files ?? []) {
+    if (!THUMBNAIL_NAME_RE.test(file.originalname)) continue;
+    fs.writeFileSync(path.join(config.paths.models, file.originalname), file.buffer);
+    saved++;
+  }
+  res.json({ saved });
+}
 
 function isHttpUrl(value) {
   try {
@@ -17,6 +52,7 @@ function isHttpUrl(value) {
 function toAdminModel(m) {
   return {
     ...m,
+    previewImageUrl: absoluteUrl(m.previewImageUrl),
     categoryLabel: categoryLabel(ADMIN_LANG, m.category),
     hasFile: m.fileMessageIds.length > 0,
     fileSize: m.fileSize != null ? Number(m.fileSize) : null,
@@ -124,11 +160,15 @@ export async function updateModel(req, res) {
   const existing = await prisma.model3D.findUnique({ where: { id }, select: { previewImageUrl: true } });
   if (!existing) return res.status(404).json({ error: 'Model topilmadi' });
 
-  const { data, error } = parseModelInput(req.body, { requireImage: false });
-  if (error) return res.status(400).json({ error });
-  if (!data.previewImageUrl) data.previewImageUrl = existing.previewImageUrl;
+  // Forma rasm manzilini to'liq ko'rinishda qaytaradi — o'zgarmagan bo'lsa, bazadagi asl qiymat saqlanadi
+  const submitted = String(req.body.previewImageUrl || '').trim();
+  const imageChanged =
+    Boolean(submitted) && submitted !== existing.previewImageUrl && submitted !== absoluteUrl(existing.previewImageUrl);
 
-  const imageChanged = data.previewImageUrl !== existing.previewImageUrl;
+  const { data, error } = parseModelInput({ ...req.body, previewImageUrl: imageChanged ? submitted : '' }, { requireImage: false });
+  if (error) return res.status(400).json({ error });
+  if (!imageChanged) data.previewImageUrl = existing.previewImageUrl;
+
   const embedding = imageChanged ? await getImageEmbedding(data.previewImageUrl) : null;
   await saveModel(id, { ...data, embedding });
   res.json({ id });
@@ -161,7 +201,7 @@ export async function listSearches(req, res) {
       type: s.type,
       source: s.source,
       queryText: s.queryText,
-      imageUrl: s.imageUrl,
+      imageUrl: absoluteUrl(s.imageUrl),
       resultsCount: s.resultIds.length,
       createdAt: s.createdAt,
       user: s.user,

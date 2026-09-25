@@ -1,12 +1,15 @@
 import { getInitData } from './telegram.js';
 
+// Vercel'da: backend'ning to'liq manzili (Render). Lokal ishlashda bo'sh — so'rovlar Vite proksi orqali o'tadi.
+const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
 async function request(path, { method = 'GET', body, form } = {}) {
   const headers = {};
   const initData = getInitData();
   if (initData) headers['x-telegram-init-data'] = initData;
   if (body) headers['Content-Type'] = 'application/json';
 
-  const res = await fetch(`/api/client${path}`, {
+  const res = await fetch(`${API_URL}/api/client${path}`, {
     method,
     headers,
     body: form ?? (body ? JSON.stringify(body) : undefined),

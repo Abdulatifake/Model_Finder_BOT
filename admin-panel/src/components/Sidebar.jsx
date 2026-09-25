@@ -7,7 +7,7 @@ const LANGUAGE_NAMES = { uz: "O'zbekcha", ru: 'Русский', en: 'English', a
 
 const format = (n) => Number(n).toLocaleString('ru-RU');
 
-export default function Sidebar({ active, onChange, stats }) {
+export default function Sidebar({ active, onChange, stats, onLogout }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">🔍 Model Finder</div>
@@ -56,6 +56,10 @@ export default function Sidebar({ active, onChange, stats }) {
           ))}
         </div>
       )}
+
+      <button className="sidebar-logout" onClick={onLogout}>
+        ↩ Chiqish
+      </button>
     </aside>
   );
 }

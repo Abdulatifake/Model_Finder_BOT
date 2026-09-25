@@ -1,5 +1,6 @@
+import crypto from 'crypto';
 import { config } from './config/default.js';
-import { app } from './app.js';
+import { app, setWebhookHandler, WEBHOOK_PATH } from './app.js';
 import { bot, setupBotProfile, setupMenuButton } from './core/bot.js';
 import { startCloudflareTunnel } from './core/tunnel.js';
 import { registerBotRoutes } from './routes/bot.routes.js';
@@ -7,9 +8,9 @@ import { warmUpEmbeddings } from './services/embeddingService.js';
 import { warmUpDetector } from './services/detectionService.js';
 import { t } from './i18n/index.js';
 
-const ALREADY_RUNNING = '❌ Model Finder allaqachon ishlab turibdi (boshqa oynada yoki fonda). Avval uni yoping.';
+const ALLOWED_UPDATES = ['message', 'callback_query', 'channel_post', 'edited_channel_post'];
 
-// Telegram Mini App faqat HTTPS orqali ochiladi — lokal serverga tunnel ochiladi
+// Telegram tunnel orqali lokal Mini App'ni ochishi uchun (serverda kerak emas)
 function startTunnel() {
   startCloudflareTunnel(config.port)
     .then(async (url) => {
@@ -22,7 +23,47 @@ function startTunnel() {
     .catch((err) => console.error('Tunnel ochilmadi:', err.message));
 }
 
-function startBot() {
+// Serverda (Render): Telegram yangilanishlarni HTTPS orqali o'zi yuboradi — uxlab qolish va ikki nusxa muammosi yo'q
+async function startWebhook() {
+  const secretToken = crypto.createHash('sha256').update(`webhook:${config.botToken}`).digest('hex');
+  const handler = await bot.createWebhook({
+    domain: config.publicUrl,
+    path: WEBHOOK_PATH,
+    secret_token: secretToken,
+    allowed_updates: ALLOWED_UPDATES,
+  });
+  setWebhookHandler(handler);
+  console.log(`🤖 Telegram bot webhook rejimida: ${config.publicUrl}${WEBHOOK_PATH}`);
+}
+
+async function startPolling() {
+  // Bot serverda (webhook) ishlab turgan bo'lsa, lokal nusxa uni uzib qo'ymasligi kerak
+  const { url } = await bot.telegram.getWebhookInfo();
+  if (url && !config.forcePolling) {
+    console.warn(
+      `⚠️  Bot serverda ishlayapti (${new URL(url).host}) — lokal bot ishga tushirilmadi. API va admin panel lokal ishlaydi.\n` +
+        '    Botni yana shu kompyuterda ishlatish uchun backend/.env ga BOT_MODE=polling yozing.'
+    );
+    return false;
+  }
+
+  bot
+    .launch({ allowedUpdates: ALLOWED_UPDATES }, () => console.log('🤖 Telegram bot ishga tushdi'))
+    .catch((err) => {
+      // 409 — shu token bilan boshqa joyda ham bot ishlab turibdi
+      console.error(
+        err.response?.error_code === 409
+          ? '❌ Bot boshqa joyda allaqachon ishlab turibdi (boshqa oynada yoki fonda). Avval uni yoping.'
+          : `Bot ishga tushmadi: ${err.description || err.message}`
+      );
+      process.exit(1);
+    });
+  process.once('SIGINT', () => bot.stop('SIGINT'));
+  process.once('SIGTERM', () => bot.stop('SIGTERM'));
+  return true;
+}
+
+async function startBot() {
   registerBotRoutes(bot);
   bot.catch(async (err, ctx) => {
     // Foydalanuvchi botni bloklagan — javob berib bo'lmaydi, bu oddiy holat
@@ -36,19 +77,11 @@ function startBot() {
     }
   });
 
-  bot
-    .launch({ allowedUpdates: ['message', 'callback_query', 'channel_post', 'edited_channel_post'] }, () => {
-      console.log('🤖 Telegram bot ishga tushdi');
-      setupBotProfile().catch((err) => console.error('Bot profilini sozlashda xato:', err.description || err.message));
-    })
-    .catch((err) => {
-      // 409 — shu token bilan boshqa joyda ham bot ishlab turibdi
-      console.error(err.response?.error_code === 409 ? ALREADY_RUNNING : `Bot ishga tushmadi: ${err.description || err.message}`);
-      process.exit(1);
-    });
-
-  process.once('SIGINT', () => bot.stop('SIGINT'));
-  process.once('SIGTERM', () => bot.stop('SIGTERM'));
+  const running = config.publicUrl && !config.forcePolling ? (await startWebhook(), true) : await startPolling();
+  if (running) {
+    await setupBotProfile().catch((err) => console.error('Bot profilini sozlashda xato:', err.description || err.message));
+  }
+  return running;
 }
 
 // Bot va tunnel faqat port muvaffaqiyatli egallangandan keyin ishga tushadi:
@@ -56,11 +89,18 @@ function startBot() {
 app
   .listen(config.port, () => {
     console.log(`🌐 API: http://localhost:${config.port}`);
-    if (config.tunnel === 'cloudflared') startTunnel();
-    startBot();
+    startBot()
+      .then((running) => {
+        // Tunnel faqat lokal bot uchun: bot serverda ishlayotganda uning Mini App tugmasini almashtirib qo'ymasligi kerak
+        if (running && config.tunnel === 'cloudflared') startTunnel();
+      })
+      .catch((err) => {
+        console.error('Bot ishga tushmadi:', err.description || err.message);
+        process.exit(1);
+      });
   })
   .on('error', (err) => {
-    console.error(err.code === 'EADDRINUSE' ? ALREADY_RUNNING : err);
+    console.error(err.code === 'EADDRINUSE' ? `❌ ${config.port}-port band: Model Finder yoki boshqa dastur uni ishlatyapti.` : err);
     process.exit(1);
   });
 
