@@ -3,6 +3,8 @@ import * as botController from '../controllers/botController.js';
 export function registerBotRoutes(bot) {
   bot.on(['channel_post', 'edited_channel_post'], botController.channelPost);
 
+  // Bot faqat shaxsiy chatda ishlaydi: guruhga qo'shib qo'yishsa, u yerdagi xabarlarga javob bermaydi
+  bot.use((ctx, next) => (ctx.chat?.type === 'private' ? next() : undefined));
   bot.use(botController.loadUser);
 
   bot.start(botController.start);
